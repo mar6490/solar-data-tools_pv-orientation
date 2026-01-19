@@ -1441,6 +1441,7 @@ time zone errors     {report["time zone correction"] != 0}
         daylight_method="optimized_estimates",
         data_matrix="filled",
         daytime_threshold=0.001,
+        day_selection="clear",
     ):
         """
         Sets up the location and orientation estimation for the system using the
@@ -1467,6 +1468,11 @@ time zone errors     {report["time zone correction"] != 0}
 
         :param daytime_threshold:
             The threshold for determining daytime. Default is 0.001.
+        :param day_selection:
+            Which day flags to use for orientation estimation. Options are "clear"
+            (default), "no_errors", or "all". Clear days are filtered by the
+            daily clear-day detection; "no_errors" uses the broader daily quality
+            flags; "all" uses every day except those marked as inverter clipped.
 
         :return:
             None. The method sets the `parameter_estimation` attribute of the DataHandler object
@@ -1484,6 +1490,7 @@ time zone errors     {report["time zone correction"] != 0}
             daylight_method=daylight_method,
             data_matrix=data_matrix,
             daytime_threshold=daytime_threshold,
+            day_selection=day_selection,
         )
         self.parameter_estimation = est
 
