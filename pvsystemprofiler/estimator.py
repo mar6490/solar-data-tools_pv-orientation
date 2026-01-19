@@ -42,6 +42,7 @@ class ConfigurationEstimator:
         daylight_method="optimized_estimates",
         data_matrix="filled",
         daytime_threshold=None,
+        day_selection="clear",
     ):
         if not data_handler._ran_pipeline:
             data_handler.run_pipeline()
@@ -70,9 +71,8 @@ class ConfigurationEstimator:
         self.eot_da_rosa = eot_da_rosa(self.day_of_year)
         self.delta = delta_cooper(self.day_of_year, self.daily_meas)
         self.omega = None
-        self.days = np.logical_and(
-            data_handler.daily_flags.clear, ~data_handler.daily_flags.inverter_clipped
-        )
+        self.day_selection = day_selection
+        self.days = self._select_days(day_selection)
         # self.days = self.data_handler.daily_flags.no_errors
 
         if (
@@ -198,7 +198,7 @@ class ConfigurationEstimator:
         self.x2 = x2
         dh = self.data_handler
         self.data_matrix = dh.filled_data_matrix
-        self.days = dh.daily_flags.clear
+        self.days = self._select_days(self.day_selection)
         self.num_days = dh.num_days
         self.delta = delta_cooper(self.day_of_year, self.daily_meas)
         est_lon = ConfigurationEstimator(self.data_handler, self.gmt_offset)
@@ -212,6 +212,19 @@ class ConfigurationEstimator:
         )
 
         self.tilt, self.azimuth = self._cal_orientation_helper()
+
+    def _select_days(self, day_selection):
+        if day_selection == "all":
+            return np.logical_not(self.data_handler.daily_flags.inverter_clipped)
+        if day_selection == "no_errors":
+            return np.logical_and(
+                self.data_handler.daily_flags.no_errors,
+                ~self.data_handler.daily_flags.inverter_clipped,
+            )
+        return np.logical_and(
+            self.data_handler.daily_flags.clear,
+            ~self.data_handler.daily_flags.inverter_clipped,
+        )
 
     def _cal_orientation_helper(self):
         if self.day_interval is not None:
@@ -232,15 +245,12 @@ class ConfigurationEstimator:
         boolean_filter = (
             boolean_filter
             * ~self.data_handler.boolean_masks.clipped_times
-            * self.data_handler.daily_flags.clear
+            * self.days
             * day_range
         )
 
         delta_f = self.delta[boolean_filter]
         omega_f = self.omega[boolean_filter]
-        if ~np.any(boolean_filter):
-            print("No data made it through filters")
-
         lat_initial, tilt_initial, azim_initial = random_initial_values(1)
 
         func_customized, bounds = select_function(
@@ -256,6 +266,18 @@ class ConfigurationEstimator:
             "azimuth": azim_initial[0],
         }
         init_values, ivr = select_init_values(init_values_dict, dict_keys)
+        valid_points = int(np.count_nonzero(boolean_filter))
+        if valid_points == 0:
+            raise ValueError(
+                "No data made it through orientation filters. Try loosening clear-day "
+                "parameters, adjusting day_interval, or providing more complete data."
+            )
+        if valid_points < len(init_values):
+            raise ValueError(
+                "Not enough filtered data points to fit orientation parameters. "
+                f"Need at least {len(init_values)} points, got {valid_points}. "
+                "Try loosening clear-day parameters or adjusting day_interval."
+            )
 
         estimates = run_curve_fit(
             func=func_customized,
